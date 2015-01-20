@@ -217,6 +217,7 @@ halt_status_e
 turing_test(io_data_t *input_data, action_table_t **act_tbl, uint32 wild_char_map)
 {
     uchar *temp = input_data->tape_data;
+    temp += input_data->head_pos;
     uint32 start_state = input_data->start_ind;
     uint32 end_state = input_data->halt_ind;
 
