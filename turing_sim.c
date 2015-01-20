@@ -1,53 +1,15 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include "turing_sim.h"
 
-#define TAPE_DATA_BUFFER 1024
+#define CLEAR_BITMAP(map) {\
+    map = 0x00000000;\
+}
 
-#define uint32 unsigned int
-#define int32 int
-#define uint16 unsigned short
-#define int16 short
-#define uchar unsigned char
+#define SET_WILD_CHAR_PRESENT_BIT_IN_STATE(pos, map) {\
+    map |= (0x01 << pos);\
+}
 
-typedef enum MOVE_DIRECTION {
-    LEFT,
-    STAY,
-    RIGHT
-}direction_e;
+#define GET_WILD_CHAR_PRESENT_BIT_IN_STATE(pos, map) (map & (0x01 << pos))
 
-typedef enum halt_status {
-    HALT,
-    NO_HALT
-}halt_status_e;
-
-typedef struct wild_char_bitmap
-{
-    uint32 wild_char_bit_pos;
-}wild_char_bitmap_t;
-
-typedef struct action_table action_table_t;
-typedef struct action_table
-{
-    uint16 	cur_state;
-    uchar 	read_char;
-    uchar 	write_char;
-    direction_e dir;
-    uint16 	new_state;
-    action_table_t *next;
-}action_table_t;
-
-typedef struct io_data
-{
-    uchar 	*file_name ;
-    uchar 	tape_data[TAPE_DATA_BUFFER];
-    uint32 	head_pos;
-    uint32 	start_ind;
-    uint32 	halt_ind;
-}io_data_t;
-
-//build_state_machine()
-//read_char()  {}
 action_table_t **
 alloc_action_table(int line_count)
 {
@@ -82,17 +44,9 @@ dealloc_action_table(action_table_t **act_tbl, int line_count)
     }
     printf("\nFreed");
 }
-#define CLEAR_BITMAP(map) {\
-    map = 0x00000000;\
-}
 
-#define SET_WILD_CHAR_PRESENT_BIT_IN_STATE(pos, map) {\
-    map |= (0x01 << pos);\
-}
-
-#define GET_WILD_CHAR_PRESENT_BIT_IN_STATE(pos, map) (map & (0x01 << pos))
-
-action_table_t* read_action_line(char c, uint32 *wild_char_bit_pos, FILE *fptr)
+action_table_t* 
+read_action_line(char c, uint32 *wild_char_bit_pos, FILE *fptr)
 {
     uchar next;
     action_table_t *act_tbl = (action_table_t *) malloc (sizeof(action_table_t));
@@ -122,6 +76,11 @@ action_table_t* read_action_line(char c, uint32 *wild_char_bit_pos, FILE *fptr)
 	}
 	else {
 	    ///error "- shoudl be followd by 1 to indicate LEFT direction"
+	    printf("\n Action line paring error: Invalid Direction");
+	    act_tbl->dir = INVALID_DIR;
+	    free(act_tbl);
+	    act_tbl = NULL;
+	    return NULL;
 	}
     }
     else if(c == '0') {
@@ -131,7 +90,12 @@ action_table_t* read_action_line(char c, uint32 *wild_char_bit_pos, FILE *fptr)
 	act_tbl->dir = RIGHT;
     }
     else {
-	//error INVALID DIRECTION
+	//error DIRECTION other than Left/Right/Stay
+	printf("\n Action line paring error: Invalid Direction");
+	act_tbl->dir = INVALID_DIR;
+	free(act_tbl);
+	act_tbl = NULL;
+	return NULL;
     }
     c = fgetc(fptr);//SPACE
 
@@ -142,10 +106,11 @@ action_table_t* read_action_line(char c, uint32 *wild_char_bit_pos, FILE *fptr)
 
     return act_tbl;
 }
-void fill_action_table(FILE *fptr, 
-	action_table_t **act_tbl,
-	uint32 *wild_char_bit_pos,
-	int line_count)
+parse_status_e 
+fill_action_table(FILE *fptr, 
+			action_table_t **act_tbl,
+			uint32 *wild_char_bit_pos,
+			int line_count)
 {
     char c;
 
@@ -157,6 +122,9 @@ void fill_action_table(FILE *fptr,
 	while((c = fgetc(fptr)) != '\n') {
 	    i = atoi(&c);
 	    node = read_action_line(c, wild_char_bit_pos, fptr);
+	    if(NULL == node) {
+		return PARSE_FAIL; 
+	    }
 	    if(act_tbl[i] == NULL) {
 		//Head
 		act_tbl[i] = node;
@@ -173,6 +141,8 @@ void fill_action_table(FILE *fptr,
 	}
 	line_count --;
     }
+
+    return PARSE_SUCCESS;
 }
 uint32 count_action_lines(uchar *input_file) 
 {
@@ -223,12 +193,6 @@ void read_line_val(uint32 *read_val, FILE *fptr)
     }
 }
 
-//write_char() {}
-
-//GET_STATE()
-//SET_STATE()
-//HALT_STATE
-
 #define MOVE_LEFT(c) c--
 
 #define MOVE_RIGHT(c) c++
@@ -249,7 +213,8 @@ void read_line_val(uint32 *read_val, FILE *fptr)
 #define CHANGE_STATE(dst, src) {\
     dst = src;\
 }
-halt_status_e turing_test(io_data_t *input_data, action_table_t **act_tbl, uint32 wild_char_map)
+halt_status_e 
+turing_test(io_data_t *input_data, action_table_t **act_tbl, uint32 wild_char_map)
 {
     uchar *temp = input_data->tape_data;
     uint32 start_state = input_data->start_ind;
@@ -295,32 +260,32 @@ halt_status_e turing_test(io_data_t *input_data, action_table_t **act_tbl, uint3
     }
     return HALT;
 }
-int simulate_turing_mc(uchar *input_file)
+halt_status_e
+simulate_turing_mc(uchar *input_file)
 {
     FILE *in_fptr = NULL;
     FILE *temp;
-    int line_count = 0;
 
+    int line_count = 0;
     int i = 0;
 
     io_data_t input_data;
     wild_char_bitmap_t wild_char_bitmap;
-    action_table_t **act_tbl;
-
     action_table_t *t;
 
+    halt_status_e ret_status;
+    parse_status_e parse_stat;
+
     if(NULL == input_file) {
-	//perrror
-	return 0;
+	printf("Invalid Input file\n");
+	return INVALID;
     }
 
 
-    input_data.file_name = input_file;
-
     in_fptr = fopen(input_file, "rb+");
     if(NULL == in_fptr) {
-	//perror
-	return 0;
+	printf("Failed to open file %s\n", input_file);
+	return INVALID;
     }
 
     read_tape_content(input_data.tape_data, in_fptr);
@@ -331,59 +296,77 @@ int simulate_turing_mc(uchar *input_file)
     temp = in_fptr;
     line_count = count_action_lines(input_file);
 
-    act_tbl = alloc_action_table(line_count);
+    input_data.act_tbl = alloc_action_table(line_count);
     
     CLEAR_BITMAP(wild_char_bitmap.wild_char_bit_pos);
 
-    fill_action_table(in_fptr, act_tbl, &wild_char_bitmap.wild_char_bit_pos, line_count);
+    parse_stat = fill_action_table(in_fptr, 
+	    			input_data.act_tbl, 
+				&wild_char_bitmap.wild_char_bit_pos, 
+				line_count);
 
-#if DEBUG
-    printf("\n\naabbbbb\n0\n0\n9\n");
+    if(PARSE_SUCCESS != parse_stat) {
+    	fclose(in_fptr);
+    	dealloc_action_table(input_data.act_tbl, line_count);
+	return INVALID; 
+    }
+#if 1
+    //printf("\n\naabbbbb\n0\n0\n9\n");
+    printf("State\tCharacter Read\tCharacter Written\tDirection\tNew State\n");
+    printf("----------------------------------------------------------------------------------\n");
     for(i = 0; i<line_count; i++) {
-	if(act_tbl[i]) {
-	    t = act_tbl[i];
+	if(input_data.act_tbl[i]) {
+	    t = input_data.act_tbl[i];
 	    while(t) {
-		printf("%d %c %c ", 
+		printf("\t%d \t     %c \t\t\t %c \t\t", 
 			t->cur_state,
 			t->read_char,
 			t->write_char);
 		if(t->dir == 0)
-		    printf("-1 ");
+		    printf("LEFT");//printf("-1 ");
 		if(t->dir == 1)
-		    printf("0 ");
+		    printf("STAY");//printf("0 ");
 		if(t->dir == 2)
-		    printf("1 ");
-		printf("%d\n", t->new_state);
+		    printf("RIGHT");//printf("1 ");
+		printf("\t\t    %d\n", t->new_state);
 		t = t->next;
 	    }
 	}
     }
-    printf("\n Buff: %s %d \t %d \t %d \t %d", 
-	    input_data.tape_data,
-	    input_data.head_pos,
-	    input_data.start_ind,
-	    input_data.halt_ind,
-	    line_count);
 #endif
 
-    turing_test(&input_data, act_tbl, wild_char_bitmap.wild_char_bit_pos); 
+    ret_status = turing_test(&input_data, 
+	    		     input_data.act_tbl, 
+			     wild_char_bitmap.wild_char_bit_pos); 
 
     fclose(in_fptr);
-    dealloc_action_table(act_tbl, line_count);
-    return 0;
-
+    dealloc_action_table(input_data.act_tbl, line_count);
+    return ret_status;
+}
+void usage()
+{
+    printf("\nPlease Porvide an input file as argument !\n");
+    printf("Example: \n");
+    printf("\t./a.out input.txt\n");
 }
 int main(uint32 argc, 
 	uchar *argv[])
 {
-    int turing_test_status;
+    halt_status_e turing_test_status;
 
     if(argc < 2) {
-	//usage();
-	//exit(1);
+	usage();
+	exit(1);
     }
 
     turing_test_status = simulate_turing_mc(argv[1]);
+    if(NO_HALT == turing_test_status ||
+       INVALID == turing_test_status) {
+	
+	printf("Turing test Exiting with error\n");
+	exit(1);
+
+    }
 
     return 0;
 }
