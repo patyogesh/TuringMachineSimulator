@@ -1,3 +1,14 @@
+/************************************************************
+ *
+ *  Author: Yogesh Patil
+ *  Email: patyogesh@gmail.com
+ *
+ *  Graduate Student, 
+ *  University of Florida, 
+ *  Gainesville, FL USA
+ *
+ ************************************************************/
+
 #ifndef TURING_SIM_H
 #define TURING_SIM_H
 
