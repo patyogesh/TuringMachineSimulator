@@ -7,7 +7,7 @@ How To Run
 
 make
 
-./a.out <input_file_name>
+./a.out < input_file_name >
 
 
 ------------------------
